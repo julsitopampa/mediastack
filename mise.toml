@@ -1,0 +1,22 @@
+[hooks]
+enter = "mise install --quiet"
+postinstall = "hk install --mise"
+
+[env]
+HK_MISE = 1
+
+[settings]
+lockfile = true
+lockfile_platforms = ["linux-x64"]
+
+[settings.aqua]
+cosign = true
+slsa = true
+github_attestations = true
+
+[tools]
+betterleaks = "latest"
+bitwarden = "latest"
+hk = "latest"
+jq = "latest"
+restic = "latest"

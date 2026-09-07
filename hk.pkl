@@ -1,0 +1,23 @@
+amends "package://github.com/jdx/hk/releases/download/v1.57.0/hk@1.57.0#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v1.57.0/hk@1.57.0#/Builtins.pkl"
+
+local betterleaks = new Mapping<String, Step> {
+     ["betterleaks"] {
+         check = "betterleaks git --pre-commit --redact --staged --verbose"
+     }
+}
+
+hooks {
+    ["pre-commit"] {
+        fix = true
+        stash = "git"
+        steps = betterleaks
+    }
+    ["fix"] {
+        fix = true
+        steps = betterleaks
+    }
+    ["check"] {
+        steps = betterleaks
+    }
+}

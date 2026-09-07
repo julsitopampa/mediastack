@@ -1,0 +1,38 @@
+# --- Secrets & Environment Credentials ---
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.crt
+*.pfx
+
+# --- Traefik ACME Certificates ---
+appdata/traefik/acme.json
+**/acme.json
+
+# --- Stateful Container Appdata (Backed up via Restic) ---
+appdata/
+appdata/**
+
+# --- Database Dumps & Local Backup Staging ---
+backups/
+*.sql
+*.sql.gz
+*.tar
+*.tar.zst
+
+# --- Run Logs ---
+*.session
+*.log
+**/*.log
+scripts/relink/relink.log
+scripts/backup.log
+
+# --- OS / Editor Artifacts ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~

@@ -1,0 +1,7 @@
+- [ ] Backup policy using restic and maybe git via a script (dump pgsql, sorting wht to backup etc)
+- [ ] Finish homepage configuration
+- [ ] Clean docker compose file, env and directory
+- [ ] Put stack on swarm
+- [ ] Set up central traefik with internal and external DNS Zones for every services
+- [ ] Set up central SSO with authentik on infra VM
+- [ ] Securing Vaultwarden (see wiki)

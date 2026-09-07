@@ -1,0 +1,32 @@
+# Car pg_dumpall
+**/appdata/postgresql/**
+
+# Jellyfin 
+**/appdata/jellyfin/transcodes/**
+**/appdata/jellyfin/data/transcodes/**
+**/appdata/jellyfin/metadata/**
+**/appdata/jellyfin/log/**
+**/appdata/jellyfin/cache/**
+**/appdata/jellyfin/Cache/**
+
+# qBittorrent 
+**/appdata/qbittorrent/data/BT_backup/**.torrent.fastresume.tmp
+**/appdata/qbittorrent/qBittorrent/logs/**
+**/appdata/qbittorrent/data/logs/**
+
+
+**/cache/**
+**/Cache/**
+**/.cache/**
+**/tmp/**
+**/*.tmp
+**/*.temp
+**/*.sock
+**/*.pid
+
+**/*.log
+**/*.log.*
+
+# --- Local Backup Staging & Version Control Overhead ---
+**/scripts/backup/postgres_cluster_*
+**/.git/**

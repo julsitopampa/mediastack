@@ -1,0 +1,535 @@
+networks:
+  mediastack:
+    name: mediastack
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+      - subnet: ${DOCKER_SUBNET:?err}
+        gateway: ${DOCKER_GATEWAY:?err}
+
+services:
+  flaresolverr:
+    container_name: flaresolverr
+    environment:
+      - UMASK=${UMASK:?err}
+      - TZ=${TZ}
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - LOG_LEVEL=info
+      - LOG_HTML=false
+      - CAPTCHA_SOLVER=none
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    ports:
+      - ${FLARESOLVERR_PORT}:8191/tcp
+    restart: unless-stopped
+    volumes:
+      - ${CONF_DIR}/flaresolverr/config:/config
+    networks:
+      - mediastack
+
+  gluetun:
+    container_name: gluetun
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      - BLOCK_MALICIOUS=off
+      - VPN_TYPE=${VPN_TYPE}
+      - VPN_PORT_FORWARDING_DOWN_COMMAND=/bin/sh -c 'wget -O- -nv --retry-connrefused --post-data "json={\"listen_port\":0,\"current_network_interface\":\"lo\"}" http://127.0.0.1:8080/api/v2/app/setPreferences'
+      - VPN_PORT_FORWARDING_UP_COMMAND=/bin/sh -c 'wget -O- -nv --retry-connrefused --post-data "json={\"listen_port\":{{PORT}},\"current_network_interface\":\"{{VPN_INTERFACE}}\",\"random_port\":false,\"upnp\":false}" http://127.0.0.1:8080/api/v2/app/setPreferences'
+      - VPN_SERVICE_PROVIDER=${VPN_PROVIDER}
+      - UPDATER_PERIOD=24h
+      - GLUETUN_CONTROL_SERVER_PASSWORD=${GLUETUN_PASSWORD}
+      - PORT_FORWARD_ONLY=on
+      - GLUETUN_CONTROL_SERVER_AUTHENTICATION=on
+      - WIREGUARD_PRIVATE_KEY=${WIREGUARD_PRIVATE_KEY}
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - UMASK=${UMASK:?err}
+      - TZ=${TZ}
+      - VPN_PORT_FORWARDING=on
+      - SERVER_COUNTRIES=${SERVER_COUNTRIES}
+      - SERVER_REGIONS=${SERVER_REGIONS}
+      - SERVER_CITIES=${SERVER_CITIES}
+      - SERVER_HOSTNAMES=${SERVER_HOSTNAMES}
+      - GLUETUN_CONTROL_SERVER_USER=${GLUETUN_USER}
+      - LOG_LEVEL=DEBUG
+      - FIREWALL_OUTBOUND_SUBNETS=172.0.0.0/8
+    image: qmcgaw/gluetun:v3.41.3
+    ports:
+      - 5010:5010 #mousehole
+      - ${WEBUI_PORT_QBITTORRENT}:8080/tcp
+      - ${GLUETUN_CONTROL_SERVER_PORT}:8000/tcp
+    restart: always
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    volumes:
+      - ${CONF_DIR}/gluetun/config:/gluetun
+      - /lib/modules:/lib/modules:ro
+    networks:
+      - mediastack
+
+  jellyfin:
+    container_name: jellyfin
+    user: 1000:1000
+    devices:
+      - /dev/dri/card0:/dev/dri/card0
+      - /dev/dri/renderD128:/dev/dri/renderD128
+    environment:
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - TZ=${TZ}
+      - UMASK=${UMASK:?err}
+    image: jellyfin/jellyfin:latest
+    ports:
+      - ${WEBUI_PORT_JELLYFIN}:8096/tcp
+    restart: unless-stopped
+    volumes:
+      - ${MEDIA_DIR}/media:/data/media
+      - ${CONF_DIR}/jellyfin/cache:/cache
+      - ${CONF_DIR}/jellyfin/config:/config
+    networks:
+      - mediastack
+    labels:
+      - 'traefik.enable=true'
+      # ROUTERS
+      - 'traefik.http.routers.jellyfin.service=jellyfin'
+      - 'traefik.http.routers.jellyfin.rule=Host(`jellyfin.nuvem.fr`)'
+      - 'traefik.http.routers.jellyfin.entrypoints=websecure'
+      - 'traefik.http.routers.jellyfin.tls=true'
+      - 'traefik.http.routers.jellyfin.tls.options=tls12only@file'
+      # MIDDLEWARES
+      - 'traefik.http.routers.jellyfin.middlewares=jellyfin-mw'
+      - 'traefik.http.middlewares.jellyfin-mw.headers.customResponseHeaders.X-Robots-Tag=noindex,nofollow,nosnippet,noarchive,notranslate,noimageindex'
+      - 'traefik.http.middlewares.jellyfin-mw.headers.SSLRedirect=true'
+      - 'traefik.http.middlewares.jellyfin-mw.headers.SSLHost=jellyfin.nuvem.fr'
+      - 'traefik.http.middlewares.jellyfin-mw.headers.SSLForceHost=true'
+      - 'traefik.http.middlewares.jellyfin-mw.headers.STSSeconds=315360000'
+      - 'traefik.http.middlewares.jellyfin-mw.headers.STSIncludeSubdomains=true'
+      - 'traefik.http.middlewares.jellyfin-mw.headers.STSPreload=true'
+      - 'traefik.http.middlewares.jellyfin-mw.headers.forceSTSHeader=true'
+      - 'traefik.http.middlewares.jellyfin-mw.headers.frameDeny=true'
+      - 'traefik.http.middlewares.jellyfin-mw.headers.contentTypeNosniff=true'
+      - 'traefik.http.middlewares.jellyfin-mw.headers.customresponseheaders.X-XSS-PROTECTION=1'
+      # SERVICES
+      - 'traefik.http.services.jellyfin.loadbalancer.server.scheme=http'
+      - 'traefik.http.services.jellyfin.loadbalancer.server.port=8096'
+
+  jellyseerr:
+    container_name: jellyseerr
+    init: true
+    environment:
+      - LOG_LEVEL=info
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - UMASK=${UMASK:?err}
+      - TZ=${TZ}
+      - DB_TYPE=postgres
+      - DB_HOST=postgresql
+      - DB_PORT=${POSTGRESQL_PORT}
+      - DB_USER=${POSTGRESQL_USER}
+      - DB_PASS=${POSTGRESQL_PASSWORD}
+      - DB_NAME=${JELLYSEERR_DATABASE}
+      - DB_LOG_QUERIES="false"
+    image: ghcr.io/seerr-team/seerr:latest
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:5055/api/v1/status || exit 1
+      start_period: 20s
+      timeout: 3s
+      interval: 15s
+      retries: 3
+    ports:
+      - ${WEBUI_PORT_JELLYSEERR}:5055/tcp
+    restart: unless-stopped
+    volumes:
+      - ${CONF_DIR}/jellyseerr/config:/app/config
+    networks:
+      - mediastack
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.jellyseerr.entrypoints=websecure"
+      - "traefik.http.routers.jellyseerr.rule=Host(`jellyseerr.nuvem.fr`)"
+      - "traefik.http.routers.jellyseerr.tls=true"
+      ## HTTP Services
+      - "traefik.http.routers.jellyseerr.service=jellyseerr"
+      - "traefik.http.services.jellyseerr.loadbalancer.server.port=5055"
+      - "traefik.http.services.jellyseerr.loadbalancer.server.scheme=http"
+
+  prowlarr:
+    container_name: prowlarr
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+      - 9.9.9.9
+    environment:
+      - TZ=${TZ}
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - UMASK=${UMASK:?err}
+    image: lscr.io/linuxserver/prowlarr:latest
+    ports:
+      - ${WEBUI_PORT_PROWLARR}:9696/tcp
+    restart: unless-stopped
+    volumes:
+      - ${CONF_DIR}/prowlarr/config:/config
+    networks:
+      - mediastack
+
+  qbittorrent:
+    container_name: qbittorrent
+    environment:
+      - LOG_LEVEL=debug
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - UMASK=${UMASK:?err}
+      - TZ=${TZ}
+      - WEBUI_PORT=${WEBUI_PORT_QBITTORRENT}
+    image: lscr.io/linuxserver/qbittorrent:5.1.4-libtorrentv1
+    restart: unless-stopped
+    volumes:
+      - ${MEDIA_DIR}:/data
+      - ${CONF_DIR}/qbittorrent/config:/config
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+        restart: true
+
+  radarr:
+    container_name: radarr
+    environment:
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - UMASK=${UMASK:?err}
+      - TZ=${TZ}
+    image: lscr.io/linuxserver/radarr:latest
+    ports:
+      - ${WEBUI_PORT_RADARR}:7878/tcp
+    restart: unless-stopped
+    volumes:
+      - ${MEDIA_DIR}:/data
+      - ${CONF_DIR}/radarr/config:/config
+    networks:
+      - mediastack
+    labels:
+      - traefik.enable=true
+    # ROUTERS
+      - traefik.http.routers.radarr.service=radarr
+      - traefik.http.routers.radarr.rule=Host(`radarr.nuvem.fr`)
+      - traefik.http.routers.radarr.entrypoints=websecure
+      - traefik.http.routers.radarr.tls=true
+    # SERVICES
+      - traefik.http.services.radarr.loadbalancer.server.scheme=http
+      - traefik.http.services.radarr.loadbalancer.server.port=7878
+
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    environment:
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - UMASK=${UMASK:?err}
+      - TZ=${TZ}
+    volumes:
+      - ${CONF_DIR}/sonarr:/config
+      - ${MEDIA_DIR}:/data
+    ports:
+      - ${WEBUI_PORT_SONARR}:8989
+    restart: unless-stopped
+    networks:
+      - mediastack
+    labels:
+      - traefik.enable=true
+    # ROUTERS
+      - traefik.http.routers.sonarr.service=sonarr
+      - traefik.http.routers.sonarr.rule=Host(`sonarr.nuvem.fr`)
+      - traefik.http.routers.sonarr.entrypoints=websecure
+      - traefik.http.routers.sonarr.tls=true
+    # SERVICES
+      - traefik.http.services.sonarr.loadbalancer.server.scheme=http
+      - traefik.http.services.sonarr.loadbalancer.server.port=8989
+
+  postgresql:
+    image: docker.io/library/postgres:latest
+    container_name: postgresql
+    restart: unless-stopped
+    ports:
+      - ${POSTGRESQL_PORT:?err}:5432
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      start_period: 20s
+      interval: 30s
+      retries: 5
+      timeout: 5s
+    volumes:
+      - ${CONF_DIR}/postgresql:/var/lib/postgresql/18/docker
+      - ./scripts/docker-postgresql-multiple-databases:/docker-entrypoint-initdb.d
+    environment:
+      - TZ=${TZ:?err}
+      # USAGE : POSTGRES_MULTIPLE_DATABASES=DB1:DB2:...:DB(n)
+      - POSTGRES_MULTIPLE_DATABASES=${JELLYSEERR_DATABASE}:${AUTHENTIK_DATABASE}
+      - POSTGRES_USER=${POSTGRESQL_USER}
+      - POSTGRES_PASSWORD=${POSTGRESQL_PASSWORD}
+    networks:
+      - mediastack
+
+  bazarr:
+    image: lscr.io/linuxserver/bazarr:latest
+    container_name: bazarr
+    environment:
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - UMASK=${UMASK:?err}
+      - TZ=${TZ}
+    volumes:
+      - ${CONF_DIR}/bazarr/config:/config
+      - ${MEDIA_DIR}:/data
+    ports:
+      - ${WEBUI_PORT_BAZARR}:6767
+    restart: unless-stopped
+    networks:
+      - mediastack
+
+  profilarr:
+    image: ghcr.io/dictionarry-hub/profilarr:latest
+    container_name: profilarr
+    ports:
+      - ${WEBUI_PORT_PROFILARR}:6868
+    volumes:
+      - ${CONF_DIR}/profilarr:/config
+    environment:
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - UMASK=${UMASK:?err}
+      - TZ=${TZ}
+    restart: unless-stopped
+    networks:
+      - mediastack
+
+  homepage:
+    image: ghcr.io/gethomepage/homepage:latest
+    container_name: homepage
+    ports:
+      - ${WEBUI_PORT_HOMEPAGE}:3000
+    volumes:
+      - ${CONF_DIR}/homepage:/app/config # Make sure your local config directory exists
+      - /var/run/docker.sock:/var/run/docker.sock # (optional) For docker integrations, see alternative methods
+    environment:
+      - HOMEPAGE_ALLOWED_HOSTS=192.168.1.127:3000 # required, may need port. See gethomepage.dev/installation/#homepage_allowed_hosts
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - UMASK=${UMASK:?err}
+      - TZ=${TZ}
+    restart: unless-stopped
+    networks:
+      - mediastack
+
+  dockerproxy:
+    image: ghcr.io/tecnativa/docker-socket-proxy:latest
+    container_name: dockerproxy
+    ports:
+      - ${DOCKERPROXY_PORT}:2375
+    environment:
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - UMASK=${UMASK:?err}
+      - TZ=${TZ}
+      - CONTAINERS=1 # Allow access to viewing containers
+      - SERVICES=1 # Allow access to viewing services (necessary when using Docker Swarm)
+      - TASKS=1 # Allow access to viewing tasks (necessary when using Docker Swarm)
+      - POST=1 # Disallow any POST operations (effectively read-only)
+      - IMAGES=1
+      - SYSTEM=1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro # Mounted as read-only
+    restart: unless-stopped
+    networks:
+      - mediastack
+
+  traefik:
+    image: traefik:latest
+    container_name: traefik
+    ports:
+      - 443:443/tcp
+      - 80:80/tcp
+      - ${WEBUI_PORT_TRAEFIK}:8080/tcp
+    volumes:
+      - ${CONF_DIR}/traefik/traefik.yml:/traefik.yml
+      - ${CONF_DIR}/traefik/etc:/etc/traefik
+    restart: unless-stopped
+    environment:
+      - OVH_ENDPOINT=${OVH_ENDPOINT}
+      - OVH_APPLICATION_KEY=${OVH_APPLICATION_KEY}
+      - OVH_APPLICATION_SECRET=${OVH_APPLICATION_SECRET}
+      - OVH_CONSUMER_KEY=${OVH_CONSUMER_KEY}
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - UMASK=${UMASK:?err}
+      - TZ=${TZ}
+    networks:
+      - mediastack
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.traefik-secure.tls=true
+      - traefik.http.routers.traefik-secure.tls.certresolver=letsencrypt
+      - traefik.http.routers.traefik-secure.tls.domains[0].main=nuvem.fr
+      - traefik.http.routers.traefik-secure.tls.domains[0].sans=*.nuvem.fr
+  
+  autobrr:
+    container_name: autobrr
+    image: ghcr.io/autobrr/autobrr:latest
+    restart: unless-stopped
+    environment:
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - UMASK=${UMASK:?err}
+      - TZ=${TZ}
+    volumes:
+      - ${CONF_DIR}/autobrr/config:/config
+      - ${MEDIA_DIR}:/data
+    ports:
+      - 7474:7474
+    networks:
+      - mediastack
+  
+  cross-seed:
+    image: ghcr.io/cross-seed/cross-seed:latest
+    container_name: cross-seed
+    user: 1000:1000
+    ports:
+      - "2468:2468"
+    environment:
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - UMASK=${UMASK:?err}
+      - TZ=${TZ}
+    volumes:
+      - ${CONF_DIR}/cross-seed/config:/config
+      - ${MEDIA_DIR}:/data
+    command: daemon
+    restart: unless-stopped
+    networks:
+      - mediastack
+
+  qui:
+    image: ghcr.io/autobrr/qui:latest
+    container_name: qui
+    restart: unless-stopped
+    ports:
+      - "7476:7476"
+    user: 1000:1000
+    volumes:
+      - ${CONF_DIR}/qui:/config
+      - ${MEDIA_DIR}:/data
+    environment:
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - UMASK=${UMASK:?err}
+      - TZ=${TZ}
+    networks:
+      - mediastack
+  
+  mousehole:
+    image: tmmrtn/mousehole:latest
+    container_name: mousehole
+    network_mode: "service:gluetun"
+    environment:
+      TZ: ${TZ} # Set to your timezone for localization
+    volumes:
+      # persist cookie data across container restarts
+      - "${CONF_DIR}/mousehole:/srv/mousehole"
+    restart: unless-stopped
+  
+  thelounge:
+    image: lscr.io/linuxserver/thelounge:latest
+    container_name: thelounge
+    environment:
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - UMASK=${UMASK:?err}
+      - TZ=${TZ}
+    volumes:
+      - ${CONF_DIR}/thelounge/config:/config
+    ports:
+      - 9001:9000
+    restart: unless-stopped
+    networks:
+      - mediastack
+  
+  authentik-server:
+    command: server
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    environment:
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
+      AUTHENTIK_POSTGRESQL__NAME: ${AUTHENTIK_DATABASE}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${POSTGRESQL_PASSWORD}
+      AUTHENTIK_POSTGRESQL__USER: ${POSTGRESQL_USER}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?secret key required}
+    image: ghcr.io/goauthentik/server:2026.2.1
+    container_name: authentik-server
+    ports:
+      - 9000:9000 #http
+      - 9443:9443 #https
+    restart: unless-stopped
+    shm_size: 512mb
+    volumes:
+      - ${CONF_DIR}/authentik/data:/data
+      - ${CONF_DIR}/authentik/custom-templates:/templates
+    networks:
+      - mediastack
+    labels:
+      - traefik.enable=true
+    # ROUTERS
+      - traefik.http.routers.authentik.entrypoints=websecure
+      - traefik.http.routers.authentik.rule=Host(`auth.nuvem.fr`)
+      - traefik.http.routers.authentik.tls=true
+    # SERVICES
+      - traefik.http.routers.authentik.service=authentik
+      - traefik.http.services.authentik.loadbalancer.server.scheme=http
+      - traefik.http.services.authentik.loadbalancer.server.port=9000
+
+  authentik-worker:
+    command: worker
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    environment:
+      AUTHENTIK_POSTGRESQL__HOST: postgresql
+      AUTHENTIK_POSTGRESQL__NAME: ${AUTHENTIK_DATABASE}
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${POSTGRESQL_PASSWORD}
+      AUTHENTIK_POSTGRESQL__USER: ${POSTGRESQL_USER}
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?secret key required}
+      DOCKER_HOST: "http://dockerproxy:2375"
+    image: ghcr.io/goauthentik/server:2026.2.1
+    container_name: authentik-worker
+    restart: unless-stopped
+    shm_size: 512mb
+    user: root
+    volumes:
+      - ${CONF_DIR}/authentik/data:/data
+      - ${CONF_DIR}/authentik/certs:/certs
+      - ${CONF_DIR}/authentik/custom-templates:/templates
+    networks:
+      - mediastack
+
+  upbrr:
+    image: ghcr.io/autobrr/upbrr:latest
+    restart: unless-stopped
+    user: "1000:1000"
+    container_name: upbrr
+    ports:
+      - 7480:7480
+    volumes:
+      - ${CONF_DIR}/upbrr:/config
+      - ${MEDIA_DIR}:/data
+    environment:
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - UMASK=${UMASK:?err}
+      - TZ=${TZ}
+    networks:
+      - mediastack
