@@ -6,7 +6,7 @@ STACK_DIR="$(cd "${SCRIPT_DIR}/../../" && pwd)"
 LOG_FILE="${SCRIPT_DIR}/backup.log"
 REPO="/data/backup/mediastack"
 EXCLUDES_FILE="${SCRIPT_DIR}/restic-excludes.txt"
-PASS_FILE="/home/julsito/.config/restic/password"
+PASS_FILE="/home/$USER/.config/restic/password"
 
 log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') $*" | tee -a "$LOG_FILE"
@@ -30,13 +30,11 @@ if ! restic snapshots -r "$REPO" --password-file "$PASS_FILE" >/dev/null 2>&1; t
     exit 1
 fi
 
-# --- Core Functions ---
-
 dump_postgresql() {
     local target_dump_file="$1"
 
     log "Dumping PostgreSQL databases..."
-    if sudo /usr/local/bin/mediastack-pg-dump > "$target_dump_file" 2>&1 | tee -a "$LOG_FILE"; then
+    if sudo /usr/local/bin/mediastack-pg dump > "$target_dump_file" 2>&1 | tee -a "$LOG_FILE"; then
         chmod 600 "$target_dump_file"
     else
         log "WARNING: PostgreSQL dump failed. Continuing snapshot..."
@@ -87,7 +85,7 @@ cmd_restore() {
         read -rp "Do you want to restore PostgreSQL database from $(basename "$restored_dump")? [y/N] " confirm
         if [[ "$confirm" =~ ^[yY]$ ]]; then
             log "Restoring PostgreSQL database..."
-            if sudo /usr/local/bin/mediastack-pg-restore < "$restored_dump" 2>&1 | tee -a "$LOG_FILE"; then
+            if sudo /usr/local/bin/mediastack-pg restore < "$restored_dump" 2>&1 | tee -a "$LOG_FILE"; then
                 log "PostgreSQL database restored successfully."
             else
                 log "ERROR: PostgreSQL database restore failed!"
