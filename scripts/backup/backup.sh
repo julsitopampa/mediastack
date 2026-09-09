@@ -100,6 +100,6 @@ case "${1:-backup}" in
     backup)    cmd_backup ;;
     restore)   cmd_restore "${2:-latest}" "${3:-}" ;;
     snapshots) restic snapshots -r "$REPO" --password-file "$PASS_FILE" ;;
-    check)     restic check -r "$REPO" --password-file "$PASS_FILE" ;;
+    check)     restic check -r "$REPO" --password-file "$PASS_FILE" --read-data-subset=10% ;;
     *) echo "Usage: $0 {backup|restore [snapshot_id] [target_dir]|snapshots|check}"; exit 1 ;;
 esac
