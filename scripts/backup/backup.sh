@@ -4,9 +4,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STACK_DIR="$(cd "${SCRIPT_DIR}/../../" && pwd)"
 LOG_FILE="${SCRIPT_DIR}/backup.log"
-REPO="/data/backup/mediastack"
+export RESTIC_REPOSITORY="/data/backup/mediastack"
 EXCLUDES_FILE="${SCRIPT_DIR}/restic-excludes.txt"
-PASS_FILE="/home/$USER/.config/restic/password"
+export RESTIC_PASSWORD_FILE="/home/$USER/.config/restic/password"
 
 log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') $*" | tee -a "$LOG_FILE"
@@ -19,14 +19,14 @@ if ! grep -qs '/data ' /proc/mounts; then
     exit 1
 fi
 
-if [[ ! -f "$PASS_FILE" ]]; then
+if [[ ! -f "$RESTIC_PASSWORD_FILE" ]]; then
     echo "ERROR: Password file missing at $PASS_FILE" >&2
     exit 1
 fi
 
-if ! restic snapshots -r "$REPO" --password-file "$PASS_FILE" >/dev/null 2>&1; then
-    echo "ERROR: Restic repository at $REPO is not initialized or unreachable." >&2
-    echo "Initialize it once with: restic init -r $REPO --password-file $PASS_FILE" >&2
+if ! restic snapshots >/dev/null 2>&1; then
+    echo "ERROR: Restic repository at $RESTIC_REPOSITORY is not initialized or unreachable." >&2
+    echo "Initialize it once with: restic init" >&2
     exit 1
 fi
 
@@ -50,7 +50,7 @@ cmd_backup() {
     dump_postgresql "$sql_dump"
 
     log "Creating Restic snapshot..."
-    if restic backup -r "$REPO" --password-file "$PASS_FILE" "$STACK_DIR" \
+    if restic backup "$STACK_DIR" \
         --exclude-file "$EXCLUDES_FILE" --tag "mediastack" --cleanup-cache 2>&1 | tee -a "$LOG_FILE"; then
         log "Restic snapshot created successfully."
     else
@@ -60,7 +60,7 @@ cmd_backup() {
     rm -f "$sql_dump"
 
     log "Pruning old snapshots..."
-    if ! restic forget -r "$REPO" --password-file "$PASS_FILE" --tag "mediastack" \
+    if ! restic forget --tag "mediastack" \
         --keep-daily 7 --keep-weekly 4 --keep-monthly 6 --keep-yearly 1 --prune 2>&1 | tee -a "$LOG_FILE"; then
         log "WARNING: Pruning old snapshots failed."
     fi
@@ -74,7 +74,7 @@ cmd_restore() {
 
     log "Restoring snapshot '$snapshot_id' to $target_dir..."
     mkdir -p "$target_dir"
-    restic restore -r "$REPO" --password-file "$PASS_FILE" "$snapshot_id" --target "$target_dir" 2>&1 | tee -a "$LOG_FILE"
+    restic restore "$snapshot_id" --target "$target_dir" 2>&1 | tee -a "$LOG_FILE"
 
     log "Files restored to $target_dir"
 
@@ -99,7 +99,7 @@ cmd_restore() {
 case "${1:-backup}" in
     backup)    cmd_backup ;;
     restore)   cmd_restore "${2:-latest}" "${3:-}" ;;
-    snapshots) restic snapshots -r "$REPO" --password-file "$PASS_FILE" ;;
-    check)     restic check -r "$REPO" --password-file "$PASS_FILE" --read-data-subset=10% ;;
+    snapshots) restic snapshots ;;
+    check)     restic check --read-data-subset=10% ;;
     *) echo "Usage: $0 {backup|restore [snapshot_id] [target_dir]|snapshots|check}"; exit 1 ;;
 esac
