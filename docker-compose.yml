@@ -351,6 +351,7 @@ services:
   traefik:
     image: traefik:latest
     container_name: traefik
+    user: 1000:1000
     ports:
       - 443:443/tcp
       - 80:80/tcp
