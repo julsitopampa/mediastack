@@ -1,5 +1,6 @@
-# Car pg_dumpall
+# Car pg_dumpall et sqlite backup 
 **/appdata/postgresql/**
+**/appadata/**/*.db
 
 **/cache/**
 **/Cache/**

@@ -4,9 +4,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STACK_DIR="$(cd "${SCRIPT_DIR}/../../" && pwd)"
 LOG_FILE="${SCRIPT_DIR}/backup.log"
-export RESTIC_REPOSITORY="/data/backup/mediastack"
 EXCLUDES_FILE="${SCRIPT_DIR}/restic-excludes.txt"
 export RESTIC_PASSWORD_FILE="/home/$USER/.config/restic/password"
+export RESTIC_REPOSITORY="/data/backup/mediastack"
 
 log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') $*" | tee -a "$LOG_FILE"
@@ -42,12 +42,35 @@ dump_postgresql() {
     fi
 }
 
+dump_sqlite() {
+    log "Finding SQlite databases..."
+    mapfile -t DB < <(find "$STACK_DIR" -type f -name '*.db' 2>/dev/null)
+
+    # directory name after 'appadat/' + '-' + 'filename'
+    local db_name="$(grep -oP '(?<=appdata\/)[a-z]+(?=\/)' <<< "$d" || true)-$(grep-oP '(?<=\/)[a-zA-Z0-9-_]+.db' <<< "$d" || true)"
+
+    log "Dumping SQlite databases..."
+    for d in "${DB[@]}"; do
+        if sqlite3 $d ".backup '$SCRIPT_DIR/sqlite/$db_name'" 2>&1 | tee -a "$LOG_FILE"; then
+            chmod 600 "$SCRIPT_DIR/sqlite/$db_name"
+        else
+            log "WARNING: SQlite dump failed. Continuing snapshot..."
+            rm -f "$SCRIPT_DIR/sqlite/$db_name"
+    done
+
+    for d in "$SCRIPT_DIR/sqlite/*.db"; do
+        result=$(sqlite3 "$d" "PRAGMA integrity_check;")
+        [ "$result" = "ok" ] || { log "INTEGRITY FAIL: $db -> $result"; exit 1; }
+    done
+}
+
 cmd_backup() {
     log "Starting backup..."
     local timestamp="$(date +%Y%m%d_%H%M%S)"
-    local sql_dump="${SCRIPT_DIR}/postgres_cluster_${timestamp}.sql"
+    local sql_dump="${SCRIPT_DIR}/pgsql/postgres_cluster_${timestamp}.sql"
 
     dump_postgresql "$sql_dump"
+    dump_sqlite
 
     log "Creating Restic snapshot..."
     if restic backup "$STACK_DIR" \
@@ -58,6 +81,7 @@ cmd_backup() {
     fi
 
     rm -f "$sql_dump"
+    rm -f "${SCRIPT_DIR}/sqlite/*"
 
     log "Pruning old snapshots..."
     if ! restic forget --tag "mediastack" \

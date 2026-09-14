@@ -28,7 +28,7 @@ log() {
 }
 
 for cmd in bw curl jq; do
-    if ! command -v "$cmd" >/dev/null 2>&1; then
+    if ! which "$cmd" >/dev/null 2>&1; then
         echo "ERROR: '$cmd' is required but not installed." >&2
         exit 1
     fi
