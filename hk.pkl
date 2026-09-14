@@ -7,11 +7,17 @@ local betterleaks = new Mapping<String, Step> {
      }
 }
 
+local env = new Mapping<String, Step> {
+    ["env"] {
+        check = "sed 's/=.*/=/' .env > .env.example"
+    }
+}
+
 hooks {
     ["pre-commit"] {
         fix = true
         stash = "git"
-        steps = betterleaks
+        steps = betterleaks, env
     }
     ["fix"] {
         fix = true
