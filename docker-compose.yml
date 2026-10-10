@@ -534,3 +534,40 @@ services:
       - TZ=${TZ}
     networks:
       - mediastack
+
+  mylar3:
+    image: lscr.io/linuxserver/mylar3:latest
+    container_name: mylar3
+    environment:
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - UMASK=${UMASK:?err}
+      - TZ=${TZ}
+    volumes:
+      - ${CONF_DIR}/mylar3:/config
+      - ${MEDIA_DIR}:/data
+    ports:
+      - 8090:8090
+    restart: unless-stopped
+    networks:
+      - mediastack
+
+  komga:
+    image: gotson/komga
+    container_name: komga
+    environment:
+      - PUID=${PUID:?err}
+      - PGID=${PGID:?err}
+      - UMASK=${UMASK:?err}
+      - TZ=${TZ}
+    volumes:
+      - ${CONF_DIR}/komga:/config
+      - ${MEDIA_DIR}:/data
+    ports:
+      - 25600:25600
+    user: "1000:1000"
+    # remove the whole environment section if you don't need it
+    restart: unless-stopped
+    networks:
+      - mediastack
+
