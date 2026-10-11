@@ -104,7 +104,7 @@ for f in "${FILES[@]}"; do
     esac
  
     if [[ "$APP" == "radarr" ]]; then
-        TMDB_ID="$(grep -oP '(?<=tmdbid-)\d+' <<< "$f" || true)"
+        TMDB_ID="$(grep -oP -m 1 '(?<=tmdb-)\d+' <<< "$f" | head -n1 || true)"
         if [[ -z "$TMDB_ID" ]]; then
             log "SKIP  $f - no tmdbid found in filename"
             continue
@@ -115,6 +115,7 @@ for f in "${FILES[@]}"; do
             -H "X-Api-Key: ${RADARR_KEY}" || true)"
         MOVIE_ID="$(echo "$MOVIE_JSON" | jq -r '.[0].id // empty')"
         FILE_ID="$(echo "$MOVIE_JSON" | jq -r '.[0].movieFile.id // empty')"
+
  
         if [[ -z "$MOVIE_ID" || -z "$FILE_ID" ]]; then
             log "SKIP  $f - radarr: no movie/movieFile for tmdbId=$TMDB_ID"
@@ -138,7 +139,7 @@ for f in "${FILES[@]}"; do
         log "SRCH  $f -> radarr MoviesSearch triggered commandId=$CMD_ID"
  
     else
-        TVDB_ID="$(grep -oP '(?<=tvdbid-)\d+' <<< "$f" || true)"
+        TVDB_ID="$(grep -oP '(?<=tvdb-)\d+' <<< "$f" | head -n1 || true)"
         SEASON_RAW="$(grep -oP '(?<=[Ss])\d{2}(?=[Ee]\d{2})' <<< "$f" || true)"
  
         if [[ -z "$TVDB_ID" || -z "$SEASON_RAW" ]]; then
