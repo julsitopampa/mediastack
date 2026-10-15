@@ -18,9 +18,39 @@ torrent that was keeping it seeded/maintained.
 (TV) — not with a raw `rm` — and triggers a fresh search so the *arr app
 re-downloads and re-hardlinks the content correctly.
 
-This is a **manual maintenance script**, not a scheduled job: it requires
-an interactive [Vaultwarden](https://github.com/dani-garcia/vaultwarden)
-unlock each run, by design.
+It is meant to run **unattended, once a day, from cron** (see
+[Scheduling](#scheduling)). Credentials come from a `chmod 600` env file
+instead of an interactive vault unlock.
+
+## Intended workflow
+
+The script is the second half of a two-part clean-up for torrents the
+tracker has removed ("unregistered"):
+
+1. **qui purges the dead torrent.** An [automation
+   rule](https://getqui.com/docs/features/automations/) in
+   [qui](https://getqui.com/) matches `Unregistered is true` and deletes
+   the torrent **with its files, preserving cross-seeds**. Deleting removes
+   the torrent's own directory entry for each file, so the library copy's
+   link count drops from 2 to 1. If a live cross-seed still shares the
+   files they are kept, the count stays above 1, and the script correctly
+   leaves that file alone.
+2. **`relink.sh` repairs the library.** Later, cron runs the script: it
+   finds the files now at link count 1, deletes them through Radarr/Sonarr,
+   and triggers a search so a fresh, seeding, hard-linked copy replaces
+   them.
+
+The two parts are decoupled on purpose. qui's Delete action must be
+standalone (it can't be combined with "run external program"), and once
+the torrent is gone there is nothing left to hand to a program. So the
+script takes no torrent data: it sweeps the whole library for orphans.
+
+Two requirements follow:
+
+- The purge rule's delete mode must **remove files**. A plain "Delete
+  (keep files)" leaves the downloads copy in place, the link count stays
+  at 2, and the script never sees the file.
+- The `Unregistered` condition needs qBittorrent 5.1 or newer.
 
 ---
 
@@ -28,79 +58,64 @@ unlock each run, by design.
 
 | Tool | Purpose | Reference |
 |---|---|---|
-| [`bw`](https://bitwarden.com/help/cli/) | Bitwarden/Vaultwarden CLI, used to fetch API keys | Bitwarden CLI docs |
 | [`curl`](https://curl.se/docs/manpage.html) | HTTP calls to Radarr/Sonarr | curl man page |
-| [`jq`](https://jqlang.org/) | Parses JSON responses from `bw` and the *arr APIs | jq manual |
+| [`jq`](https://jqlang.org/) | Parses JSON responses from the *arr APIs | jq manual |
+| [GNU `grep`](https://www.gnu.org/software/grep/manual/grep.html) | `-P` (PCRE) powers the lookbehind regexes; BusyBox `grep` lacks it | grep manual |
+| [`cron`](https://man7.org/linux/man-pages/man5/crontab.5.html) | Daily scheduling | crontab(5) |
 
-Vaultwarden setup expected:
-- Item named **`radarr`**: API key in the **first custom field** on the item, base URL in the **URI** field
-- Item named **`sonarr`**: same layout
-- You must already be logged in via `bw login` before running the script (`bw unlock` alone isn't enough on a fresh machine)
+The script runs on the host, not inside the qui container, as UID/GID
+`1000:1000`. It needs read access to `/data/media`.
 
 ---
 
 ## First-time setup
 
-Run once, on the Jellyfin box, before the first execution of `relink.sh`.
+Run once, on the host.
 
-**1. Install dependencies**
-
-```bash
-# jq, curl, unzip (Debian/Ubuntu)
-sudo apt update && sudo apt install -y jq curl unzip
-```
-
-**2. Download and install the `bw` binary** :
-
-Check [github.com/bitwarden/clients/releases](https://github.com/bitwarden/clients/releases)
-for the latest tag starting with `cli-v` — as of this writing that's
-`cli-v2026.8.0` — and substitute the version number below if a newer one
-has shipped since:
+**1. Install dependencies** (Debian/Ubuntu):
 
 ```bash
-cd /tmp
-
-wget https://github.com/bitwarden/clients/releases/download/cli-v2026.8.0/bw-linux-2026.8.0.zip
-unzip bw-linux-2026.8.0.zip
-
-chmod u+x bw
-sudo mv bw /usr/local/bin/bw
+sudo apt update && sudo apt install -y jq curl
 ```
 
-`/usr/local/bin` is on `$PATH` by default on essentially every Linux
-distro — that's what makes `bw` callable from anywhere afterward, without
-needing to `export PATH=...` yourself. Confirm it worked:
+**2. Create the env file** at the absolute path set as `ENV_FILE` in the
+script, with exactly these four names and unquoted values:
+
+```
+RADARR_URL=http://localhost:7878
+RADARR_KEY=<radarr api key>
+SONARR_URL=http://localhost:8989
+SONARR_KEY=<sonarr api key>
+```
+
+Each app's API key is under **Settings → General → Security** in its web
+UI. Then lock the file down:
 
 ```bash
-bw --version
+chmod 600 /absolute/path/to/.env
+chown 1000:1000 /absolute/path/to/.env
 ```
 
-Optional but worth doing on a server you'll trust with vault access:
-verify the download's SHA-256 checksum against the one Bitwarden
-publishes per release (see the "Assets" section of the release page) —
-[checksum verification instructions](https://bitwarden.com/help/cli/#download-and-install).
-
-**2. Point `bw` at your Vaultwarden instance** (not the public Bitwarden
-cloud — Vaultwarden is self-hosted, so the CLI needs to be told the server
-explicitly):
-
-```bash
-bw config server https://vaultwarden.<domain>.fr
-```
-
-**3. Log in** (interactive, one-time — persists auth state under
-`~/.config/Bitwarden CLI` for this user):
-
-```bash
-bw login
-```
-
-**4. Make the script executable and set ownership**:
+**3. Make the script executable**:
 
 ```bash
 chmod 750 relink.sh
 chown 1000:1000 relink.sh
 ```
+
+**4. Dry-run in a cron-like environment**, to prove the script doesn't
+depend on your interactive shell:
+
+```bash
+env -i HOME="$HOME" PATH=/usr/bin:/bin /absolute/path/relink.sh
+```
+
+The log should show `Found N unlinked file(s)` and `DRY` lines that match
+your own `find` output.
+
+**5. Do one live run by hand** (`--apply`), read `relink.log`, and only
+then add the cron line from [Scheduling](#scheduling).
+
 ---
 
 ## Usage
@@ -111,7 +126,23 @@ chown 1000:1000 relink.sh
 ```
 
 Runs as UID/GID `1000:1000`. Logs to `relink.log` in the same directory as
-the script (both to that file and to stdout).
+the script (to the file and to stdout).
+
+### Scheduling
+
+Install with `crontab -e` as the `1000:1000` user, not root:
+
+```cron
+0 0 * * * /absolute/path/relink.sh --apply >/dev/null 2>>/absolute/path/relink.log
+```
+
+- `>/dev/null` drops stdout, since `log()` already writes the same lines
+  to `relink.log`; `2>>` appends stderr to that file so errors land in
+  one place.
+- Cron's `PATH` is minimal (typically `/usr/bin:/bin`). If `jq` or `curl`
+  live elsewhere, add a `PATH=` line at the top of the crontab.
+- Because the run happens once per period, no lock is used. Overlap would
+  need a run that outlasts the period, or a manual run at the same moment.
 
 ---
 
@@ -142,40 +173,41 @@ don't contain literal newlines (a safe bet for media files).
 
 ## How credentials are retrieved
 
-```bash
-bw status | jq -r '.status'          # confirm logged in
-bw unlock --raw                       # interactive master-password prompt
-```
-
-The script prints an explicit prompt (`echo -e "\nEnter your Vaultwarden
-vault's master password :\n"`) right before this call, since `bw unlock`'s
-own prompt can otherwise appear with no context if you're not expecting
-it.
-
-`bw unlock --raw` returns a **session key**
-([`BW_SESSION`](https://bitwarden.com/help/cli/#using-bw-session)) — a
-token that authorizes subsequent `bw` calls without re-entering your
-master password. It's kept in a local shell variable, never written to
-disk, and explicitly discarded at the end via `bw lock`. It's *not*
-exported into the environment — each `bw` call receives it directly via
-the `--session` flag instead, which is enough since nothing downstream
-needs it implicitly picked up from the environment.
-
-Each credential is fetched with:
+The four values come from a `chmod 600` env file, read without executing it:
 
 ```bash
-bw get item "radarr" --session "$BW_SESSION"
+ENV_FILE="/absolute/path/to/.env"
+env_get() { grep -m1 "^$1=" "$ENV_FILE" | cut -d= -f2- || true; }
+
+RADARR_URL="$(env_get RADARR_URL)"
+RADARR_KEY="$(env_get RADARR_KEY)"
+SONARR_URL="$(env_get SONARR_URL)"
+SONARR_KEY="$(env_get SONARR_KEY)"
 ```
 
-which returns a Bitwarden [item
-object](https://bitwarden.com/help/cli/#get) as JSON. `jq` then pulls
-either the base URL (`.login.uris[0].uri`) or the API key. The API key
-comes from `.fields[0].value` — the **first custom field** defined on the
-item, not the login password. This means field *order* on the Vaultwarden
-item matters: if a second custom field is ever added above the API key
-field, this lookup would silently start returning the wrong value instead
-of failing loudly, since `.fields[0]` would still resolve to *something*.
-out of it.
+- **Why not `source .env`:** [`source`](https://www.gnu.org/software/bash/manual/html_node/Bourne-Shell-Builtins.html)
+  executes the file as shell code and loads every variable in it into the
+  script and its `curl` children. If the file is shared with other
+  services, that includes secrets this script has no business seeing.
+  Extracting four named lines avoids both problems.
+- **`grep -m1 "^$1="`:** [`grep`](https://man7.org/linux/man-pages/man1/grep.1.html)
+  returns the first line that *starts with* the name plus `=`. The `^`
+  anchor stops `OLD_RADARR_KEY=` from matching `RADARR_KEY`, and `-m1`
+  stops at the first hit.
+- **`cut -d= -f2-`:** [`cut`](https://man7.org/linux/man-pages/man1/cut.1.html)
+  splits the line on `=` (`-d=`) and prints field 2 **through the end**
+  (the trailing `-` makes it a range). That keeps any `=` inside the
+  value. Plain `-f2` would print only up to the next `=` and silently cut
+  off an API key ending in `=` padding, which would surface later as a
+  confusing `401`.
+- **`|| true`:** under `set -e` and `pipefail`, a missing key would make
+  `grep` fail and kill the script silently. With it, the value comes back
+  empty and the validation loop below prints a clear `missing ...` error.
+- **Constraints:** values must be unquoted (quotes would be kept as part of
+  the value); `ENV_FILE` must be an absolute path, since cron starts in
+  `$HOME`; and the file should be `chmod 600`, owned by `1000:1000`. If
+  your `.env` is shared with other services, prefer a dedicated file with
+  only these four lines.
 
 ### The `name:value` validation loop
 
@@ -212,12 +244,11 @@ itself contains colons — which a URL like `http://192.168.1.10:7878`
 does. Using `##*:` or `%:*` instead would grab the wrong side of a
 later colon (e.g. the port number).
 
-The check also explicitly tests for the literal string `"null"`, not just
-emptiness — because `jq -r` prints the text `null` (not an empty string)
-when a JSON field is missing. Without that check, a misnamed Vaultwarden
-field would silently become the string `"null"` sent as an API key,
-surfacing later as a confusing `401 Unauthorized` from Radarr instead of
-a clear error here.
+The check also tests for the literal string `"null"`. That guard dates
+from the Vaultwarden version, where `jq -r` printed `null` for a missing
+JSON field. With the env-file lookups an absent key yields an **empty**
+string, which the `-z` test catches; the `"null"` test is harmless and
+can stay.
 
 `set -u` (see below) is also why `${1:-}` is used for the `--apply`
 argument check — `${var:-default}` substitutes `default` only when `var`
@@ -254,21 +285,31 @@ differ only in whether the API calls that mutate anything actually fire.
 
 Reference: [Radarr API docs](https://radarr.video/docs/api/)
 
-1. **ID extraction from filename** — Radarr's own
-   [TRaSH-Guides](https://trash-guides.info/) naming convention embeds
-   the [TMDb](https://www.themoviedb.org/) ID as `[tmdbid-XXXXX]`:
+1. **ID extraction from filename** — the movie folder and the file both
+   carry the [TMDb](https://www.themoviedb.org/) ID as `{tmdb-XXXXX}`, so
+   a full path contains it **twice**:
 
-   ```bash
-   TMDB_ID="$(grep -oP '(?<=tmdbid-)\d+' <<< "$f" || true)"
+   ```
+   /data/media/movies/Moonlight (2016) {tmdb-376867}/Moonlight (2016) {tmdb-376867} [WEBDL-1080p][EAC3 5.1][h264]-ACKER.mkv
    ```
 
-   `-P` enables [PCRE](https://www.pcre.org/) mode, which is what makes
-   `(?<=tmdbid-)` — a **lookbehind** assertion — available. A lookbehind
-   matches a position only if the given text precedes it, without
-   including that text in the result. So against
-   `...[tmdbid-11324]...`, the match is `11324` alone: the `tmdbid-`
-   prefix is required but not captured. `\d+` is the digit sequence
-   actually returned; `-o` prints only the match, not the whole line.
+   ```bash
+   TMDB_ID="$(grep -oP '(?<=\{tmdb-)\d+' <<< "$f" | head -n1 || true)"
+   ```
+
+   - `-P` enables [PCRE](https://www.pcre.org/) mode, which makes
+     `(?<=\{tmdb-)` — a **lookbehind** assertion — available. It matches
+     a position only if the given text precedes it, without including
+     that text in the result. The `\{` escapes the brace so PCRE reads it
+     literally instead of as a quantifier.
+   - `\d+` is the digit sequence returned; `-o` prints every match, not
+     just the first, which here means two lines (`376867` twice).
+   - `| head -n1` keeps only the first. `grep -m1` would not work: it
+     stops after the first matching *line*, and the whole path is one
+     line.
+   - `|| true` is still needed: with `pipefail`, a path with no tag makes
+     the pipeline fail, and `set -e` would kill the script instead of
+     reaching the `-z` check that logs a clean skip.
 
 2. **Resolve to a Radarr movie** —
    `GET /api/v3/movie?tmdbId=<id>` returns an array (usually one element)
@@ -318,11 +359,14 @@ pack changing invalidates the whole pack, not just one file within it.
 1. **ID + season extraction from filename**:
 
    ```bash
-   TVDB_ID="$(grep -oP '(?<=tvdbid-)\d+' <<< "$f" || true)"
+   TVDB_ID="$(grep -oP '(?<=\{tvdb-)\d+' <<< "$f" | head -n1 || true)"
    SEASON_RAW="$(grep -oP '(?<=[Ss])\d{2}(?=[Ee]\d{2})' <<< "$f" || true)"
    ```
 
-   The TVDb ID extraction mirrors Radarr's lookbehind. The season regex
+   The TVDb ID extraction works like Radarr's: the `{tvdb-XXXXX}` tag
+   appears in both the series folder and the file, so `| head -n1` keeps
+   only the first. Without it `TVDB_ID` would hold two lines and the
+   `tvdbId=` query would be malformed. The season regex
    uses **both** a lookbehind and a **lookahead**
    (`(?=[Ee]\d{2})` — "must be followed by this, without capturing it"):
    against `...S05E09...`, `S` satisfies the lookbehind, `E09` satisfies
@@ -420,3 +464,7 @@ output when running interactively and a persistent audit trail either
 way. Log line prefixes (`SKIP`, `DRY`, `DEL`, `SRCH`) are a simple
 convention for grepping the log afterward, e.g. `grep '^.*DEL' relink.log`
 to see everything actually deleted in a given run.
+
+Under cron, stdout is discarded (`>/dev/null`) because `log()` already
+writes every line to the file; stderr is appended to the same file, so
+`ERROR:` messages and `set -e` failures end up in one place.
