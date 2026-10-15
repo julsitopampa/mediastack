@@ -27,7 +27,7 @@ log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') $*" | tee -a "$LOG_FILE"
 }
 
-for cmd in bw curl jq; do
+for cmd in curl jq; do
     if ! which "$cmd" >/dev/null 2>&1; then
         echo "ERROR: '$cmd' is required but not installed." >&2
         exit 1
@@ -36,49 +36,13 @@ done
 
 log "=== relink run started (dry_run=$DRY_RUN) ==="
 
-# --- Unlock vault and fetch credentials ---------------------------------
+ENV_FILE="/home/julsito/mediastack/.env"
+env_get() { grep -m1 "^$1=" "$ENV_FILE" | cut -d= -f2- || true; }
 
-BW_STATUS="$(bw status | jq -r '.status')"
-if [[ "$BW_STATUS" == "unauthenticated" ]]; then
-    echo "Not logged in to Bitwarden/Vaultwarden. Run 'bw login' first." >&2
-    exit 1
-fi
-
-echo -e "\nEnter your Vaultwarden vault's master password :\n"
-BW_SESSION="$(bw unlock --raw)"
-if [[ -z "$BW_SESSION" ]]; then
-    echo "ERROR: failed to unlock vault." >&2
-    exit 1
-fi
-
-
-get_item_field() {
-    # $1 = item name, $2 = "apikey" or "uri"
-    local item_json
-    item_json="$(bw get item "$1" --session "$BW_SESSION")"
-    if [[ "$2" == "apikey" ]]; then
-        echo "$item_json" | jq -r '.fields[0].value'
-    else
-        echo "$item_json" | jq -r '.login.uris[0].uri'
-    fi
-}
-
-RADARR_KEY="$(get_item_field "radarr" "apikey")"
-RADARR_URL="$(get_item_field "radarr" "uri")"
-SONARR_KEY="$(get_item_field "sonarr" "apikey")"
-SONARR_URL="$(get_item_field "sonarr" "uri")"
-
-for name_val in "RADARR_KEY:$RADARR_KEY" "RADARR_URL:$RADARR_URL" "SONARR_KEY:$SONARR_KEY" "SONARR_URL:$SONARR_URL"; do
-    val="${name_val#*:}"
-    if [[ -z "$val" || "$val" == "null" ]]; then
-        echo "ERROR: missing ${name_val%%:*} - check Vaultwarden item fields." >&2
-        exit 1
-    fi
-done
-
-log "Vault credentials retrieved (Radarr key: ${RADARR_KEY:0:4}..., Sonarr key: ${SONARR_KEY:0:4}...)"
-
-bw lock >/dev/null 2>&1 || true
+RADARR_URL="$(env_get RADARR_URL)"
+RADARR_KEY="$(env_get RADARR_KEY)"
+SONARR_URL="$(env_get SONARR_URL)"
+SONARR_KEY="$(env_get SONARR_KEY)"
 
 # --- Find candidate files ------------------------------------------------
 
