@@ -69,6 +69,24 @@ services:
       - /lib/modules:/lib/modules:ro
     networks:
       - mediastack
+    labels:
+      - traefik.enable=true
+    # ROUTERS
+      - traefik.http.routers.qbittorrent.service=qbittorrent
+      - traefik.http.routers.qbittorrent.rule=Host(`qbittorrent.nuvem.fr`)
+      - traefik.http.routers.qbittorrent.entrypoints=websecure
+      - traefik.http.routers.qbittorrent.tls=true
+
+      - traefik.http.routers.mousehole.service=mousehole
+      - traefik.http.routers.mousehole.rule=Host(`mousehole.nuvem.fr`)
+      - traefik.http.routers.mousehole.entrypoints=websecure
+      - traefik.http.routers.mousehole.tls=true
+    # SERVICES
+      - traefik.http.services.qbittorrent.loadbalancer.server.scheme=http
+      - traefik.http.services.qbittorrent.loadbalancer.server.port=8080
+
+      - traefik.http.services.mousehole.loadbalancer.server.scheme=http
+      - traefik.http.services.mousehole.loadbalancer.server.port=5010
 
   jellyfin:
     container_name: jellyfin
@@ -176,6 +194,16 @@ services:
       - ${CONF_DIR}/prowlarr/config:/config
     networks:
       - mediastack
+    labels:
+      - traefik.enable=true
+    # ROUTERS
+      - traefik.http.routers.prowlarr.service=prowlarr
+      - traefik.http.routers.prowlarr.rule=Host(`prowlarr.nuvem.fr`)
+      - traefik.http.routers.prowlarr.entrypoints=websecure
+      - traefik.http.routers.prowlarr.tls=true
+    # SERVICES
+      - traefik.http.services.prowlarr.loadbalancer.server.scheme=http
+      - traefik.http.services.prowlarr.loadbalancer.server.port=9696
 
   qbittorrent:
     container_name: qbittorrent
@@ -291,6 +319,16 @@ services:
     restart: unless-stopped
     networks:
       - mediastack
+    labels:
+      - traefik.enable=true
+    # ROUTERS
+      - traefik.http.routers.bazarr.service=bazarr
+      - traefik.http.routers.bazarr.rule=Host(`bazarr.nuvem.fr`)
+      - traefik.http.routers.bazarr.entrypoints=websecure
+      - traefik.http.routers.bazarr.tls=true
+    # SERVICES
+      - traefik.http.services.bazarr.loadbalancer.server.scheme=http
+      - traefik.http.services.bazarr.loadbalancer.server.port=6767
 
   profilarr:
     image: ghcr.io/dictionarry-hub/profilarr:latest
@@ -307,6 +345,16 @@ services:
     restart: unless-stopped
     networks:
       - mediastack
+    labels:
+      - traefik.enable=true
+    # ROUTERS
+      - traefik.http.routers.profilarr.service=profilarr
+      - traefik.http.routers.profilarr.rule=Host(`profilarr.nuvem.fr`)
+      - traefik.http.routers.profilarr.entrypoints=websecure
+      - traefik.http.routers.profilarr.tls=true
+    # SERVICES
+      - traefik.http.services.profilarr.loadbalancer.server.scheme=http
+      - traefik.http.services.profilarr.loadbalancer.server.port=6868
 
   homepage:
     image: ghcr.io/gethomepage/homepage:latest
@@ -325,6 +373,16 @@ services:
     restart: unless-stopped
     networks:
       - mediastack
+    labels:
+      - traefik.enable=true
+    # ROUTERS
+      - traefik.http.routers.homepage.service=homepage
+      - traefik.http.routers.homepage.rule=Host(`homepage.nuvem.fr`)
+      - traefik.http.routers.homepage.entrypoints=websecure
+      - traefik.http.routers.homepage.tls=true
+    # SERVICES
+      - traefik.http.services.homepage.loadbalancer.server.scheme=http
+      - traefik.http.services.homepage.loadbalancer.server.port=3000
 
   dockerproxy:
     image: ghcr.io/tecnativa/docker-socket-proxy:latest
@@ -394,6 +452,16 @@ services:
       - 7474:7474
     networks:
       - mediastack
+    labels:
+      - traefik.enable=true
+    # ROUTERS
+      - traefik.http.routers.autobrr.service=autobrr
+      - traefik.http.routers.autobrr.rule=Host(`autobrr.nuvem.fr`)
+      - traefik.http.routers.autobrr.entrypoints=websecure
+      - traefik.http.routers.autobrr.tls=true
+    # SERVICES
+      - traefik.http.services.autobrr.loadbalancer.server.scheme=http
+      - traefik.http.services.autobrr.loadbalancer.server.port=7474
   
   cross-seed:
     image: ghcr.io/cross-seed/cross-seed:latest
@@ -431,6 +499,16 @@ services:
       - TZ=${TZ}
     networks:
       - mediastack
+    labels:
+      - traefik.enable=true
+    # ROUTERS
+      - traefik.http.routers.qui.service=qui
+      - traefik.http.routers.qui.rule=Host(`qui.nuvem.fr`)
+      - traefik.http.routers.qui.entrypoints=websecure
+      - traefik.http.routers.qui.tls=true
+    # SERVICES
+      - traefik.http.services.qui.loadbalancer.server.scheme=http
+      - traefik.http.services.qui.loadbalancer.server.port=7476
   
   mousehole:
     image: tmmrtn/mousehole:latest
@@ -458,6 +536,16 @@ services:
     restart: unless-stopped
     networks:
       - mediastack
+    labels:
+      - traefik.enable=true
+    # ROUTERS
+      - traefik.http.routers.thelounge.service=thelounge
+      - traefik.http.routers.thelounge.rule=Host(`thelounge.nuvem.fr`)
+      - traefik.http.routers.thelounge.entrypoints=websecure
+      - traefik.http.routers.thelounge.tls=true
+    # SERVICES
+      - traefik.http.services.thelounge.loadbalancer.server.scheme=http
+      - traefik.http.services.thelounge.loadbalancer.server.port=9000
   
   authentik-server:
     command: server
@@ -534,6 +622,16 @@ services:
       - TZ=${TZ}
     networks:
       - mediastack
+    labels:
+      - traefik.enable=true
+    # ROUTERS
+      - traefik.http.routers.upbrr.service=upbrr
+      - traefik.http.routers.upbrr.rule=Host(`upbrr.nuvem.fr`)
+      - traefik.http.routers.upbrr.entrypoints=websecure
+      - traefik.http.routers.upbrr.tls=true
+    # SERVICES
+      - traefik.http.services.upbrr.loadbalancer.server.scheme=http
+      - traefik.http.services.upbrr.loadbalancer.server.port=7480
 
   mylar3:
     image: lscr.io/linuxserver/mylar3:latest
@@ -551,6 +649,16 @@ services:
     restart: unless-stopped
     networks:
       - mediastack
+    labels:
+      - traefik.enable=true
+    # ROUTERS
+      - traefik.http.routers.mylar3.service=mylar3
+      - traefik.http.routers.mylar3.rule=Host(`mylar3.nuvem.fr`)
+      - traefik.http.routers.mylar3.entrypoints=websecure
+      - traefik.http.routers.mylar3.tls=true
+    # SERVICES
+      - traefik.http.services.mylar3.loadbalancer.server.scheme=http
+      - traefik.http.services.mylar3.loadbalancer.server.port=8090
 
   komga:
     image: gotson/komga
@@ -570,4 +678,14 @@ services:
     restart: unless-stopped
     networks:
       - mediastack
+    labels:
+      - traefik.enable=true
+    # ROUTERS
+      - traefik.http.routers.komga.service=komga
+      - traefik.http.routers.komga.rule=Host(`komga.nuvem.fr`)
+      - traefik.http.routers.komga.entrypoints=websecure
+      - traefik.http.routers.komga.tls=true
+    # SERVICES
+      - traefik.http.services.komga.loadbalancer.server.scheme=http
+      - traefik.http.services.komga.loadbalancer.server.port=25600
 
